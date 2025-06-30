@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+
+from geometry_msgs.msg import PoseStamped, Quaternion
+from moveit_commander import MoveGroupCommander
+import math
+import numpy as np
+import random
+import rospy
+import tf.transformations as tft
+
+velocity_scaling = 0.1 # dynamic_reconfigure parameter
+
+# cb
+def velocity_scaling_cb(config, level):
+    global velocity_scaling
+    velocity_scaling = config['velocity_scaling']
+    return config
+
+import dynamic_reconfigure.server
+from motion_demo.cfg import VelocityConfig
+
+def main():
+    rospy.init_node('move_randomly_in_grid')
+
+    DRS = dynamic_reconfigure.server.Server(VelocityConfig, velocity_scaling_cb)
+
+    pose_pub = rospy.Publisher('/move_randomly_in_grid/target', PoseStamped, queue_size=1, latch=True)
+
+    MGC_global = MoveGroupCommander("arm")
+    MGC_local = MoveGroupCommander("arm_local")
+    MGC_local.set_planning_pipeline_id("pilz_industrial_motion_planner")
+    MGC_local.set_planner_id("LIN")
+
+    # Define the grid points
+    grid_size_xy = (0.5, 0.7)  # Size of the grid in meters
+    grid_points = 5  # Number of points in each direction
+    grid_points = np.meshgrid(
+        np.linspace(-grid_size_xy[0] / 2, grid_size_xy[0] / 2, grid_points),
+        np.linspace(-grid_size_xy[1] / 2, grid_size_xy[1] / 2, grid_points)
+    )
+    grid_points = np.vstack(grid_points).reshape(2, -1).T
+
+    pose = PoseStamped()
+    pose.header.frame_id = "table_top"
+    pose.pose.position.z = 0.15
+    pose.pose.orientation = Quaternion(*tft.quaternion_from_euler(0, math.tau/2, 0))
+
+    MGC_global.set_pose_target(pose)
+    MGC_global.go(wait=True)
+
+    while not rospy.is_shutdown():
+        random_point = grid_points[random.randint(0, grid_points.shape[0] - 1)]
+        pose.pose.position.x = random_point[0]
+        pose.pose.position.y = random_point[1]
+        pose_pub.publish(pose)
+
+        MGC_local.set_max_velocity_scaling_factor(velocity_scaling)
+        MGC_local.set_pose_target(pose)
+        MGC_local.go(wait=True)
+        rospy.sleep(.0)
+
+if __name__ == "__main__":
+    main()
