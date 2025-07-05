@@ -11,11 +11,16 @@ import rospy
 import tf.transformations as tft
 
 velocity_scaling = 0.3 # dynamic_reconfigure parameter
+MGC_local = None
 
 # cb
 def velocity_scaling_cb(config, level):
     global velocity_scaling
+    if config['velocity_scaling'] <= 0.0:
+        config['velocity_scaling'] = 0.01
     velocity_scaling = config['velocity_scaling']
+    if MGC_local is not None:
+        MGC_local.stop()
     return config
 
 import dynamic_reconfigure.server
@@ -34,7 +39,7 @@ def main():
     MGC_local = MoveGroupCommander("arm_local")
     MGC_local.set_planning_pipeline_id("pilz_industrial_motion_planner")
     MGC_local.set_planner_id("LIN")
-    MGC_local.set_max_acceleration_scaling_factor(0.5)
+    MGC_local.set_max_acceleration_scaling_factor(0.8)
 
     # Define the grid points in x/y of table_top
     grid_size_xy = (0.4, 0.7)  # Size of the grid in meters
