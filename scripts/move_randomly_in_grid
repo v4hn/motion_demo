@@ -39,35 +39,23 @@ def main():
     MGC_local = MoveGroupCommander("arm_local")
     MGC_local.set_planning_pipeline_id("pilz_industrial_motion_planner")
     MGC_local.set_planner_id("LIN")
-    MGC_local.set_max_acceleration_scaling_factor(0.8)
+    MGC_local.set_max_acceleration_scaling_factor(0.6)
 
     # Define the grid points in x/y of table_top
-    grid_size_xy = (0.4, 0.7)  # Size of the grid in meters
+    grid_size_xy = (0.4, 0.65)  # Size of the grid in meters
     grid_points = 5  # Number of points in each direction
     grid_points = np.meshgrid(
-        np.linspace(-grid_size_xy[0] / 2, grid_size_xy[0] / 2, grid_points),
+        np.linspace(-grid_size_xy[0] / 2, grid_size_xy[0] / 2, grid_points) - .05,
         np.linspace(-grid_size_xy[1] / 2, grid_size_xy[1] / 2, grid_points)
     )
     grid_points = np.vstack(grid_points).reshape(2, -1).T
 
-    # publish grid points as blue spheres
-    visualization_pub.publish(MarkerArray(markers= [
-        Marker(
-            header=rospy.Header(frame_id="table_top"),
-            ns="grid_points",
-            id=0,
-            type=Marker.SPHERE_LIST,
-            action=Marker.ADD,
-            scale=Vector3(0.02, 0.02, 0.02),
-            color=ColorRGBA(0.0, 0.0, 1.0, .5),
-            pose=Pose(orientation=Quaternion(0,0,0,1)),
-            points=[Point(x=point[0], y=point[1], z=0.15) for point in grid_points]
-        )
-    ]))
-
     # start in the intended joint manifold
     MGC_global.set_named_target("ready")
-    MGC_global.go(wait=True)
+
+    while not MGC_global.go(wait=True) and not rospy.is_shutdown():
+        rospy.logerr("Failed to reach initial pose 'ready', retrying...")
+        rospy.sleep(3.0)
 
     pose = PoseStamped()
     pose.header.frame_id = "table_top"
@@ -75,15 +63,38 @@ def main():
     pose.pose.orientation = Quaternion(*tft.quaternion_from_euler(0, math.tau/2, math.tau/4))
 
     while not rospy.is_shutdown():
-        random_point = grid_points[random.randint(0, grid_points.shape[0] - 1)]
+        # publish grid points as blue spheres
+        visualization_pub.publish(MarkerArray(markers= [
+            Marker(
+                header=rospy.Header(frame_id="table_top"),
+                ns="grid_points",
+                id=0,
+                type=Marker.SPHERE_LIST,
+                action=Marker.ADD,
+                scale=Vector3(0.02, 0.02, 0.02),
+                color=ColorRGBA(0.0, 0.0, 1.0, .5),
+                pose=Pose(orientation=Quaternion(0,0,0,1)),
+                points=[Point(x=point[0], y=point[1], z=0.15) for point in grid_points]
+            )
+        ]))
+
+        pt= random.randint(0, grid_points.shape[0] - 1)
+        random_point = grid_points[pt]
         pose.pose.position.x = random_point[0]
         pose.pose.position.y = random_point[1]
         pose_pub.publish(pose)
 
         MGC_local.set_max_velocity_scaling_factor(velocity_scaling)
         MGC_local.set_pose_target(pose)
-        MGC_local.go(wait=True)
-        rospy.sleep(.25)
+        (success, plan, _, error_code) = MGC_local.plan()
+        if not success:
+            rospy.logwarn(f"Point {random_point} not reachable. Planner returned:\n:{error_code}, removing from grid.")
+            grid_points = np.delete(grid_points, pt, axis=0)
+            rospy.sleep(1.0)
+            continue
+        else:
+            MGC_local.execute(plan, wait=True)
+            rospy.sleep(.25)
 
 if __name__ == "__main__":
     main()
