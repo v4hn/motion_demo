@@ -27,6 +27,9 @@ import dynamic_reconfigure.server
 from motion_demo.cfg import VelocityConfig
 
 def main():
+    global MGC_local
+    global velocity_scaling
+
     rospy.init_node('move_randomly_in_grid')
 
     DRS = dynamic_reconfigure.server.Server(VelocityConfig, velocity_scaling_cb)
