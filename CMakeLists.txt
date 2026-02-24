@@ -15,7 +15,6 @@ generate_dynamic_reconfigure_options(
 catkin_package()
 
 catkin_install_python(PROGRAMS
-  scripts/center_on_table
   scripts/move_randomly_in_grid
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
